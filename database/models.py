@@ -63,7 +63,12 @@ class Question(Base):
     level = relationship("Level", back_populates="questions")
     lesson = relationship("Lesson", back_populates="questions")
 
-engine = create_engine(DATABASE_URL, echo=False)
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,   # يتأكد إن الاتصال لسه شغال قبل كل استخدام، ولو مقفول بيفتح واحد جديد تلقائي
+    pool_recycle=280,     # يجدد الاتصال كل أقل من 5 دقايق قبل ما السيرفر يقفله بنفسه (idle timeout)
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
