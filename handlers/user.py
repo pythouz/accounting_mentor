@@ -5,8 +5,8 @@ from database.models import SessionLocal, User, AccessCode
 WAITING_FOR_CODE = 1
 
 def get_main_keyboard():
-    keyboard = [['📚 المادة العلمية للمستوى الحالي', '📝 ابدأ اختبار المستوى'],
-                ['📊 تقدمي (مستواي الحالي)', '📞 الدعم الفني']]
+    keyboard = [['📊 تقدمي (مستواي الحالي)', '📚 المادة العلمية للمستوى الحالي'],
+                ['📞 الدعم الفني', '📝 ابدأ اختبار المستوى']]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
