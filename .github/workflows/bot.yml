@@ -34,4 +34,10 @@ jobs:
         BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
         ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      run: python main.py
+      run: |
+        # طبقة حماية إضافية: لو Python process كله وقع (مش استثناء عادي، زي انهيار
+        # كامل أو OOM)، bash بيعيد تشغيله فورًا تاني من غير أي تدخل بشري.
+        until python main.py; do
+          echo "⚠️ البوت وقف بشكل غير متوقع. جاري إعادة التشغيل بعد 5 ثواني..."
+          sleep 5
+        done
