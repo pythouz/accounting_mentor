@@ -218,10 +218,11 @@ async def send_review_step(chat_id: int, level_id: int, step_index: int, context
     db = SessionLocal()
     try:
         lessons = db.query(Lesson).filter(Lesson.level_id == level_id).order_by(Lesson.order).all()
-        back_button = InlineKeyboardButton("🔙 رجوع لقائمة المستويات", callback_data="show_progress")
+        back_to_lessons_button = InlineKeyboardButton("📑 رجوع لقائمة دروس المستوى", callback_data=f"review_lessons_list:{level_id}")
+        back_to_levels_button = InlineKeyboardButton("🔙 رجوع لقائمة المستويات", callback_data="show_progress")
 
         if step_index >= len(lessons):
-            keyboard = InlineKeyboardMarkup([[back_button]])
+            keyboard = InlineKeyboardMarkup([[back_to_lessons_button], [back_to_levels_button]])
             await context.bot.send_message(
                 chat_id,
                 "✅ خلصت مراجعة كل دروس المستوى ده.",
@@ -237,12 +238,14 @@ async def send_review_step(chat_id: int, level_id: int, step_index: int, context
             if has_video:
                 keyboard = InlineKeyboardMarkup([
                     [InlineKeyboardButton("▶️ عرض الفيديو التوضيحي", callback_data=f"review_step:{level_id}:{step_index}:video")],
-                    [back_button],
+                    [back_to_lessons_button],
+                    [back_to_levels_button],
                 ])
             else:
                 keyboard = InlineKeyboardMarkup([
                     [InlineKeyboardButton("الدرس التالي ➡️", callback_data=f"review_step:{level_id}:{step_index + 1}:text")],
-                    [back_button],
+                    [back_to_lessons_button],
+                    [back_to_levels_button],
                 ])
             await context.bot.send_message(chat_id, caption_text, reply_markup=keyboard, parse_mode="Markdown")
             return
@@ -250,7 +253,8 @@ async def send_review_step(chat_id: int, level_id: int, step_index: int, context
         if stage == "video" and has_video:
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("الدرس التالي ➡️", callback_data=f"review_step:{level_id}:{step_index + 1}:text")],
-                [back_button],
+                [back_to_lessons_button],
+                [back_to_levels_button],
             ])
             await context.bot.send_video(
                 chat_id,
@@ -283,7 +287,64 @@ async def review_level_callback(update: Update, context: ContextTypes.DEFAULT_TY
     finally:
         db.close()
 
-    await send_review_step(query.message.chat_id, level_id, 0, context, stage="text")
+    # بدل ما يبدأ من الدرس الأول على طول، نوريله قائمة كل الدروس عشان يختار هو عايز يراجع إيه
+    text, markup = await _build_review_lessons_list(level_id)
+    if text is None:
+        return
+    try:
+        await query.edit_message_text(text, reply_markup=markup, parse_mode="Markdown")
+    except Exception:
+        await context.bot.send_message(query.message.chat_id, text, reply_markup=markup, parse_mode="Markdown")
+
+
+async def _build_review_lessons_list(level_id: int):
+    db = SessionLocal()
+    try:
+        level = db.query(Level).filter(Level.id == level_id).first()
+        if not level:
+            return None, None
+        lessons = db.query(Lesson).filter(Lesson.level_id == level_id).order_by(Lesson.order).all()
+
+        buttons = [
+            [InlineKeyboardButton(f"{i + 1}. {lesson.title}", callback_data=f"review_step:{level_id}:{i}:text")]
+            for i, lesson in enumerate(lessons)
+        ]
+        buttons.append([InlineKeyboardButton("🔙 رجوع لقائمة المستويات", callback_data="show_progress")])
+
+        if not lessons:
+            text = f"📚 *مستوى {level.level_number}: {level.title}*\n\nمفيش دروس مضافة للمستوى ده لسه."
+        else:
+            text = f"📚 *مستوى {level.level_number}: {level.title}*\n\nاختار الدرس اللي عايز تراجعه:"
+
+        return text, InlineKeyboardMarkup(buttons)
+    finally:
+        db.close()
+
+
+async def review_lessons_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """زرار 'رجوع لقائمة دروس المستوى' من داخل عرض درس معين."""
+    query = update.callback_query
+    await query.answer()
+    level_id = int(query.data.split(":")[1])
+
+    telegram_id = update.effective_user.id
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.telegram_id == telegram_id).first()
+        level = db.query(Level).filter(Level.id == level_id).first()
+        if not user or not level or level.level_number >= user.current_level:
+            await query.answer("🔒 المستوى ده مش متاح للمراجعة.", show_alert=True)
+            return
+    finally:
+        db.close()
+
+    text, markup = await _build_review_lessons_list(level_id)
+    if text is None:
+        return
+    try:
+        await query.edit_message_text(text, reply_markup=markup, parse_mode="Markdown")
+    except Exception:
+        await context.bot.send_message(query.message.chat_id, text, reply_markup=markup, parse_mode="Markdown")
 
 
 async def review_step_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -313,6 +374,7 @@ def get_content_handlers():
         CallbackQueryHandler(lesson_step_callback, pattern="^lesson_step:"),
         CallbackQueryHandler(show_progress_callback, pattern="^show_progress$"),
         CallbackQueryHandler(review_level_callback, pattern="^review_level:"),
+        CallbackQueryHandler(review_lessons_list_callback, pattern="^review_lessons_list:"),
         CallbackQueryHandler(review_step_callback, pattern="^review_step:"),
         CallbackQueryHandler(locked_level_callback, pattern="^locked_level:"),
     ]
